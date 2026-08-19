@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">SalviaAIZ</string>
+    <string name="welcome_subtitle">قدرت‌گرفته از Z.ai</string>
+    <string name="get_started">شروع کنید</string>
+    <string name="chat_welcome">امروز چطور می‌توانم به شما کمک کنم؟</string>
+    <string name="chat_input_hint">پیام به SalviaAIZ...</string>
+</resources>
