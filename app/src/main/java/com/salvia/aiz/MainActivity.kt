@@ -1,5 +1,6 @@
 package com.salvia.aiz
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -7,6 +8,8 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -17,13 +20,25 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.*
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
 
 // Color Palette
 val SkyBlue = Color(0xFF4A90E2)
@@ -32,6 +47,10 @@ val LightPurpleContainer = Color(0xFFF3E8FF)
 val PureWhite = Color(0xFFFFFFFF)
 val TextPrimary = Color(0xFF1A1A2E)
 val TextSecondary = Color(0xFF4A4A4A)
+
+const val ZAI_MODEL = "glm-4.6" // مدل هوش مصنوعی
+const val PREFS_NAME = "SalviaAIZPrefs"
+const val KEY_API = "api_key"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,36 +61,60 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+data class ChatMessage(val text: String, val isUser: Boolean)
+
 @Composable
 fun SalviaApp() {
     val nav = rememberNavController()
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    
+    // خواندن کلید API از حافظه گوشی
+    var apiKey by remember { mutableStateOf(prefs.getString(KEY_API, "") ?: "") }
+
     NavHost(navController = nav, startDestination = "welcome") {
         composable("welcome") {
-            WelcomeScreen(onNavigateToMain = { nav.navigate("chat") { popUpTo("welcome") { inclusive = true } } })
+            WelcomeScreen(
+                apiKey = apiKey,
+                onApiKeyChange = { newKey ->
+                    apiKey = newKey
+                    prefs.edit().putString(KEY_API, newKey).apply() // ذخیره کلید در گوشی
+                },
+                onNavigateToMain = {
+                    if (apiKey.isNotBlank()) {
+                        nav.navigate("chat") { popUpTo("welcome") { inclusive = true } }
+                    }
+                }
+            )
         }
         composable("chat") {
-            ChatScreen()
+            ChatScreen(apiKey = apiKey)
         }
     }
 }
 
 @Composable
-fun WelcomeScreen(onNavigateToMain: () -> Unit) {
+fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateToMain: () -> Unit) {
     val transition = rememberInfiniteTransition()
     val logoAlpha by transition.animateFloat(
         initialValue = 0.3f, targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(1500, easing = EaseInOutCubic), RepeatMode.Reverse)
     )
     var buttonVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { delay(2500); buttonVisible = true }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) { delay(1500); buttonVisible = true }
 
     Box(
         modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(PureWhite, LightPurpleContainer))),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 24.dp)
+        ) {
             Box(
-                modifier = Modifier.size(220.dp).clip(RoundedCornerShape(32.dp))
+                modifier = Modifier.size(160.dp).clip(RoundedCornerShape(32.dp))
                     .background(Brush.linearGradient(listOf(SkyBlue, LightPurple)))
                     .padding(4.dp).clip(RoundedCornerShape(28.dp)).background(PureWhite).padding(16.dp),
                 contentAlignment = Alignment.Center
@@ -82,17 +125,53 @@ fun WelcomeScreen(onNavigateToMain: () -> Unit) {
                     modifier = Modifier.fillMaxSize().alpha(logoAlpha)
                 )
             }
+            
             Spacer(modifier = Modifier.height(24.dp))
-            Text("SalviaAIZ", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text("SalviaAIZ", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             Spacer(modifier = Modifier.height(8.dp))
-            Text(stringResource(R.string.welcome_subtitle), fontSize = 16.sp, color = TextSecondary)
-            Spacer(modifier = Modifier.height(48.dp))
+            Text(stringResource(R.string.welcome_subtitle), fontSize = 14.sp, color = TextSecondary)
+            
             AnimatedVisibility(visible = buttonVisible, enter = fadeIn(tween(500)) + slideInVertically { it / 2 }) {
-                Button(
-                    onClick = onNavigateToMain, shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = SkyBlue, contentColor = PureWhite),
-                    modifier = Modifier.padding(horizontal = 48.dp).height(52.dp)
-                ) { Text(stringResource(R.string.get_started), fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Spacer(modifier = Modifier.height(32.dp))
+                    
+                    // کادر وارد کردن کلید API
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = onApiKeyChange,
+                        label = { Text("Z.ai API Key", color = TextSecondary) },
+                        placeholder = { Text("کلید خود را وارد کنید", color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(), // مخفی کردن کلید برای امنیت
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            focusedBorderColor = SkyBlue,
+                            unfocusedBorderColor = LightPurple,
+                            cursorColor = SkyBlue
+                        )
+                    )
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    Button(
+                        onClick = {
+                            keyboard?.hide()
+                            onNavigateToMain()
+                        },
+                        enabled = apiKey.isNotBlank(), // دکمه تا وقتی کلید وارد نشده غیرفعال است
+                        shape = RoundedCornerShape(24.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SkyBlue,
+                            contentColor = PureWhite,
+                            disabledContainerColor = Color.Gray,
+                            disabledContentColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth().height(52.dp)
+                    ) {
+                        Text(stringResource(R.string.get_started), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
     }
@@ -100,31 +179,126 @@ fun WelcomeScreen(onNavigateToMain: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen() {
-    var text by remember { mutableStateOf("") }
+fun ChatScreen(apiKey: String) {
+    var inputText by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    val messages = remember { mutableStateListOf<ChatMessage>() }
+    val scope = rememberCoroutineScope()
+
     Scaffold(
         containerColor = PureWhite,
-        topBar = { TopAppBar(title = { Text("SalviaAIZ", color = SkyBlue, fontWeight = FontWeight.Bold) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = PureWhite)) },
+        topBar = { 
+            TopAppBar(
+                title = { Text("SalviaAIZ", color = SkyBlue, fontWeight = FontWeight.Bold) }, 
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = PureWhite) 
+            ) 
+        },
         bottomBar = {
             Surface(color = PureWhite, shadowElevation = 4.dp) {
                 Row(Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
-                        value = text, onValueChange = { text = it },
+                        value = inputText, onValueChange = { inputText = it },
                         placeholder = { Text(stringResource(R.string.chat_input_hint)) },
                         modifier = Modifier.weight(1f), shape = RoundedCornerShape(24.dp),
                         colors = TextFieldDefaults.outlinedTextFieldColors(containerColor = PureWhite, focusedBorderColor = SkyBlue, unfocusedBorderColor = Color.LightGray)
                     )
                     Spacer(Modifier.width(8.dp))
-                    FloatingActionButton(onClick = {}, containerColor = SkyBlue, contentColor = PureWhite, shape = CircleShape) {
-                        Text("↑", fontSize = 20.sp)
+                    FloatingActionButton(
+                        onClick = {
+                            if (inputText.isNotBlank() && !isLoading) {
+                                val userMsg = inputText
+                                messages.add(ChatMessage(userMsg, true))
+                                inputText = ""
+                                isLoading = true
+                                
+                                scope.launch {
+                                    val botReply = sendMessageToZai(userMsg, apiKey)
+                                    messages.add(ChatMessage(botReply, false))
+                                    isLoading = false
+                                }
+                            }
+                        },
+                        containerColor = SkyBlue, contentColor = PureWhite, shape = CircleShape
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = PureWhite, strokeWidth = 2.dp)
+                        } else {
+                            Text("↑", fontSize = 20.sp)
+                        }
                     }
                 }
             }
         }
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(60.dp))
-            Text(stringResource(R.string.chat_welcome), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        if (messages.isEmpty()) {
+            Column(Modifier.padding(padding).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text(stringResource(R.string.chat_welcome), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(messages) { msg ->
+                    ChatBubble(msg)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ChatBubble(message: ChatMessage) {
+    val alignment = if (message.isUser) Alignment.End else Alignment.Start
+    val bgColor = if (message.isUser) SkyBlue else LightPurple
+    
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
+        Surface(
+            color = bgColor,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.widthIn(max = 280.dp)
+        ) {
+            Text(
+                text = message.text,
+                color = PureWhite,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                fontSize = 15.sp
+            )
+        }
+    }
+}
+
+// ====== تابع ارتباط با سرور Z.ai ======
+suspend fun sendMessageToZai(userText: String, apiKey: String): String {
+    return withContext(Dispatchers.IO) {
+        try {
+            val client = OkHttpClient()
+            val jsonBody = JSONObject().apply {
+                put("model", ZAI_MODEL)
+                val messagesArray = JSONArray()
+                messagesArray.put(JSONObject().put("role", "user").put("content", userText))
+                put("messages", messagesArray)
+            }.toString()
+
+            val body = jsonBody.toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("https://api.z.ai/api/paas/v4/chat/completions")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .post(body)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val resStr = response.body?.string() ?: ""
+            
+            // استخراج متن پاسخ از JSON
+            val jsonRes = JSONObject(resStr)
+            if (jsonRes.has("error")) {
+                "خطای سرور: کلید API اشتباه است یا اعتبار ندارد."
+            } else {
+                jsonRes.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+            }
+        } catch (e: Exception) {
+            "خطا در ارتباط با سرور: لطفا اینترنت خود را بررسی کنید."
         }
     }
 }
