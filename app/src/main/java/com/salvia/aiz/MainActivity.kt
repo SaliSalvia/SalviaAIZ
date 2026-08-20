@@ -93,6 +93,8 @@ fun SalviaApp() {
     }
 }
 
+// این خط اضافه شد تا خطای experimental برطرف شود
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateToMain: () -> Unit) {
     val transition = rememberInfiniteTransition()
