@@ -31,7 +31,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -299,8 +298,7 @@ fun ImageGenScreen(apiKey: String) {
                             selectedContainerColor = LightPurple,
                             containerColor = PureWhite,
                             selectedLabelColor = PureWhite,
-                            labelColor = TextSecondary,
-                            borderColor = Color.LightGray
+                            labelColor = TextSecondary
                         )
                     )
                 }
@@ -425,7 +423,6 @@ suspend fun generateZaiImage(prompt: String, size: String, apiKey: String): Stri
             val resStr = response.body?.string() ?: ""
             val jsonRes = JSONObject(resStr)
             
-            // Z.ai returns image URL in data[0].url
             if (jsonRes.has("data")) {
                 jsonRes.getJSONArray("data").getJSONObject(0).getString("url")
             } else {
