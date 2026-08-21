@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,7 +25,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -58,7 +58,7 @@ val TextPrimary = Color(0xFF1A1A2E)
 val TextSecondary = Color(0xFF4A4A4A)
 
 const val CHAT_MODEL = "glm-4.6"
-const val IMAGE_MODEL = "cogview-3" // مدل تولید عکس Z.ai
+const val IMAGE_MODEL = "cogview-3"
 const val PREFS_NAME = "SalviaAIZPrefs"
 const val KEY_API = "api_key"
 
@@ -105,7 +105,7 @@ fun SalviaApp() {
             }
             composable("chat") { ChatScreen(apiKey) }
             composable("image") { ImageGenScreen(apiKey) }
-            composable("settings") { PlaceholderScreen("Settings (Coming Soon)") }
+            composable("settings") { PlaceholderScreen("Settings") }
         }
     }
 }
@@ -155,7 +155,7 @@ fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateTo
     }
 }
 
-// ==================== صفحه چت (با استریمینگ و پیوست) ====================
+// ==================== صفحه چت ====================
 @Composable
 fun ChatScreen(apiKey: String) {
     var inputText by remember { mutableStateOf("") }
@@ -204,7 +204,8 @@ fun ChatScreen(apiKey: String) {
                                     val userMsg = inputText
                                     val img = attachedImageUri
                                     messages.add(ChatMessage(text = userMsg, isUser = true, imageUri = img))
-                                    inputText = ""; attachedImageUri = null
+                                    inputText = ""
+                                    attachedImageUri = null
                                     isLoading = true
                                     scope.launch {
                                         val botMsgId = UUID.randomUUID().toString()
@@ -256,7 +257,7 @@ fun ChatBubble(message: ChatMessage) {
     }
 }
 
-// ==================== صفحه تولید عکس (Image Generation) ====================
+// ==================== صفحه تولید عکس ====================
 @Composable
 fun ImageGenScreen(apiKey: String) {
     var prompt by remember { mutableStateOf("") }
@@ -282,25 +283,27 @@ fun ImageGenScreen(apiKey: String) {
                 shape = RoundedCornerShape(16.dp),
                 colors = TextFieldDefaults.outlinedTextFieldColors(containerColor = PureWhite, focusedBorderColor = SkyBlue, unfocusedBorderColor = Color.LightGray)
             )
-            
+
             Spacer(Modifier.height(12.dp))
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 sizes.forEach { (size, label) ->
-                    FilterChip(
-                        selected = selectedSize == size,
-                        onClick = { selectedSize = size },
-                        label = { Text(label, fontSize = 12.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = LightPurple,
-                            containerColor = PureWhite,
-                            selectedLabelColor = PureWhite,
-                            labelColor = TextSecondary
+                    val isSelected = selectedSize == size
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isSelected) LightPurple else PureWhite,
+                        modifier = Modifier.clickable { selectedSize = size }
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 12.sp,
+                            color = if (isSelected) PureWhite else TextSecondary,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                         )
-                    )
+                    }
                 }
             }
 
@@ -360,8 +363,7 @@ fun ImageGenScreen(apiKey: String) {
     }
 }
 
-// ==================== توابع ارتباط با سرور Z.ai ====================
-// تابع چت (استریم)
+// ==================== توابع ارتباط با سرور ====================
 suspend fun streamZaiChatResponse(userText: String, apiKey: String, onToken: (String) -> Unit) {
     withContext(Dispatchers.IO) {
         try {
@@ -383,7 +385,7 @@ suspend fun streamZaiChatResponse(userText: String, apiKey: String, onToken: (St
 
             val response = client.newCall(request).execute()
             val source = response.body?.source() ?: return@withContext
-            
+
             while (!source.exhausted()) {
                 val line = source.readUtf8Line() ?: continue
                 if (line.startsWith("data:")) {
@@ -393,7 +395,7 @@ suspend fun streamZaiChatResponse(userText: String, apiKey: String, onToken: (St
                         val json = JSONObject(data)
                         val content = json.getJSONArray("choices").getJSONObject(0).getJSONObject("delta").optString("content")
                         if (content.isNotEmpty()) onToken(content)
-                    } catch (e: Exception) { /* Ignore */ }
+                    } catch (e: Exception) { }
                 }
             }
         } catch (e: Exception) {
@@ -402,7 +404,6 @@ suspend fun streamZaiChatResponse(userText: String, apiKey: String, onToken: (St
     }
 }
 
-// تابع تولید عکس
 suspend fun generateZaiImage(prompt: String, size: String, apiKey: String): String? {
     return withContext(Dispatchers.IO) {
         try {
@@ -422,7 +423,7 @@ suspend fun generateZaiImage(prompt: String, size: String, apiKey: String): Stri
             val response = client.newCall(request).execute()
             val resStr = response.body?.string() ?: ""
             val jsonRes = JSONObject(resStr)
-            
+
             if (jsonRes.has("data")) {
                 jsonRes.getJSONArray("data").getJSONObject(0).getString("url")
             } else {
