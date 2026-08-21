@@ -28,8 +28,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -39,11 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.*
 import coil.compose.AsyncImage
-import coil.compose.AsyncImagePainter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -62,7 +58,8 @@ val PureWhite = Color(0xFFFFFFFF)
 val TextPrimary = Color(0xFF1A1A2E)
 val TextSecondary = Color(0xFF4A4A4A)
 
-const val ZAI_MODEL = "glm-4.6"
+const val CHAT_MODEL = "glm-4.6"
+const val IMAGE_MODEL = "cogview-3" // مدل تولید عکس Z.ai
 const val PREFS_NAME = "SalviaAIZPrefs"
 const val KEY_API = "api_key"
 
@@ -108,7 +105,7 @@ fun SalviaApp() {
                 )
             }
             composable("chat") { ChatScreen(apiKey) }
-            composable("image") { PlaceholderScreen("Image Generation (Coming Soon)") }
+            composable("image") { ImageGenScreen(apiKey) }
             composable("settings") { PlaceholderScreen("Settings (Coming Soon)") }
         }
     }
@@ -121,6 +118,7 @@ fun PlaceholderScreen(title: String) {
     }
 }
 
+// ==================== صفحه خوش آمدگویی ====================
 @Composable
 fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateToMain: () -> Unit) {
     var buttonVisible by remember { mutableStateOf(false) }
@@ -158,6 +156,7 @@ fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateTo
     }
 }
 
+// ==================== صفحه چت (با استریمینگ و پیوست) ====================
 @Composable
 fun ChatScreen(apiKey: String) {
     var inputText by remember { mutableStateOf("") }
@@ -177,7 +176,7 @@ fun ChatScreen(apiKey: String) {
 
     Scaffold(
         containerColor = PureWhite,
-        topBar = { TopAppBar(title = { Text("SalviaAIZ", color = SkyBlue, fontWeight = FontWeight.Bold) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = PureWhite)) },
+        topBar = { TopAppBar(title = { Text("SalviaAIZ Chat", color = SkyBlue, fontWeight = FontWeight.Bold) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = PureWhite)) },
         bottomBar = {
             Surface(color = PureWhite, shadowElevation = 4.dp) {
                 Column {
@@ -211,7 +210,7 @@ fun ChatScreen(apiKey: String) {
                                     scope.launch {
                                         val botMsgId = UUID.randomUUID().toString()
                                         messages.add(ChatMessage(id = botMsgId, text = "", isUser = false))
-                                        streamZaiResponse(userMsg, apiKey) { chunk ->
+                                        streamZaiChatResponse(userMsg, apiKey) { chunk ->
                                             val idx = messages.indexOfFirst { it.id == botMsgId }
                                             if (idx != -1) {
                                                 val updated = messages[idx].copy(text = messages[idx].text + chunk)
@@ -258,13 +257,119 @@ fun ChatBubble(message: ChatMessage) {
     }
 }
 
-// ====== استریمینگ (تایپ زنده هوش مصنوعی) ======
-suspend fun streamZaiResponse(userText: String, apiKey: String, onToken: (String) -> Unit) {
+// ==================== صفحه تولید عکس (Image Generation) ====================
+@Composable
+fun ImageGenScreen(apiKey: String) {
+    var prompt by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var imageUrl by remember { mutableStateOf<String?>(null) }
+    var selectedSize by remember { mutableStateOf("1024x1024") }
+    val scope = rememberCoroutineScope()
+
+    val sizes = listOf("1024x1024" to "Square", "768x1344" to "Tall", "1344x768" to "Wide")
+
+    Scaffold(
+        containerColor = PureWhite,
+        topBar = { TopAppBar(title = { Text("AI Image Studio", color = SkyBlue, fontWeight = FontWeight.Bold) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = PureWhite)) }
+    ) { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            OutlinedTextField(
+                value = prompt, onValueChange = { prompt = it },
+                placeholder = { Text("Describe the image you want to create...") },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp, max = 120.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = TextFieldDefaults.outlinedTextFieldColors(containerColor = PureWhite, focusedBorderColor = SkyBlue, unfocusedBorderColor = Color.LightGray)
+            )
+            
+            Spacer(Modifier.height(12.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                sizes.forEach { (size, label) ->
+                    FilterChip(
+                        selected = selectedSize == size,
+                        onClick = { selectedSize = size },
+                        label = { Text(label, fontSize = 12.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = LightPurple,
+                            containerColor = PureWhite,
+                            selectedLabelColor = PureWhite,
+                            labelColor = TextSecondary,
+                            borderColor = Color.LightGray
+                        )
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Button(
+                onClick = {
+                    if (prompt.isNotBlank() && !isLoading) {
+                        isLoading = true
+                        imageUrl = null
+                        scope.launch {
+                            imageUrl = generateZaiImage(prompt, selectedSize, apiKey)
+                            isLoading = false
+                        }
+                    }
+                },
+                enabled = prompt.isNotBlank() && !isLoading,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SkyBlue, disabledContainerColor = Color.Gray)
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = PureWhite, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Generating Image...")
+                } else {
+                    Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Generate", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isLoading) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        LinearProgressIndicator(color = SkyBlue, trackColor = LightPurpleContainer, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)))
+                        Spacer(Modifier.height(8.dp))
+                        Text("Creating your masterpiece...", color = TextSecondary, fontSize = 14.sp)
+                    }
+                } else if (imageUrl != null) {
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = "Generated Image",
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(24.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    Icon(Icons.Outlined.Image, null, modifier = Modifier.size(80.dp), tint = LightPurple.copy(alpha = 0.5f))
+                }
+            }
+        }
+    }
+}
+
+// ==================== توابع ارتباط با سرور Z.ai ====================
+// تابع چت (استریم)
+suspend fun streamZaiChatResponse(userText: String, apiKey: String, onToken: (String) -> Unit) {
     withContext(Dispatchers.IO) {
         try {
             val client = OkHttpClient()
             val jsonBody = JSONObject().apply {
-                put("model", ZAI_MODEL)
+                put("model", CHAT_MODEL)
                 put("stream", true)
                 val messagesArray = JSONArray()
                 messagesArray.put(JSONObject().put("role", "user").put("content", userText))
@@ -290,11 +395,44 @@ suspend fun streamZaiResponse(userText: String, apiKey: String, onToken: (String
                         val json = JSONObject(data)
                         val content = json.getJSONArray("choices").getJSONObject(0).getJSONObject("delta").optString("content")
                         if (content.isNotEmpty()) onToken(content)
-                    } catch (e: Exception) { /* Ignore parsing errors for keep-alive lines */ }
+                    } catch (e: Exception) { /* Ignore */ }
                 }
             }
         } catch (e: Exception) {
             onToken("\n[Error: ${e.message}]")
+        }
+    }
+}
+
+// تابع تولید عکس
+suspend fun generateZaiImage(prompt: String, size: String, apiKey: String): String? {
+    return withContext(Dispatchers.IO) {
+        try {
+            val client = OkHttpClient()
+            val jsonBody = JSONObject().apply {
+                put("model", IMAGE_MODEL)
+                put("prompt", prompt)
+                put("size", size)
+            }.toString()
+
+            val body = jsonBody.toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("https://api.z.ai/api/paas/v4/images/generations")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .post(body).build()
+
+            val response = client.newCall(request).execute()
+            val resStr = response.body?.string() ?: ""
+            val jsonRes = JSONObject(resStr)
+            
+            // Z.ai returns image URL in data[0].url
+            if (jsonRes.has("data")) {
+                jsonRes.getJSONArray("data").getJSONObject(0).getString("url")
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 }
