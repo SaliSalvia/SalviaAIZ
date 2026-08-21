@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.salvia.aiz
 
 import android.content.Context
@@ -48,7 +50,7 @@ val PureWhite = Color(0xFFFFFFFF)
 val TextPrimary = Color(0xFF1A1A2E)
 val TextSecondary = Color(0xFF4A4A4A)
 
-const val ZAI_MODEL = "glm-4.6" // مدل هوش مصنوعی
+const val ZAI_MODEL = "glm-4.6"
 const val PREFS_NAME = "SalviaAIZPrefs"
 const val KEY_API = "api_key"
 
@@ -69,7 +71,6 @@ fun SalviaApp() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     
-    // خواندن کلید API از حافظه گوشی
     var apiKey by remember { mutableStateOf(prefs.getString(KEY_API, "") ?: "") }
 
     NavHost(navController = nav, startDestination = "welcome") {
@@ -78,7 +79,7 @@ fun SalviaApp() {
                 apiKey = apiKey,
                 onApiKeyChange = { newKey ->
                     apiKey = newKey
-                    prefs.edit().putString(KEY_API, newKey).apply() // ذخیره کلید در گوشی
+                    prefs.edit().putString(KEY_API, newKey).apply()
                 },
                 onNavigateToMain = {
                     if (apiKey.isNotBlank()) {
@@ -93,8 +94,6 @@ fun SalviaApp() {
     }
 }
 
-// این خط اضافه شد تا خطای experimental برطرف شود
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateToMain: () -> Unit) {
     val transition = rememberInfiniteTransition()
@@ -137,7 +136,6 @@ fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateTo
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Spacer(modifier = Modifier.height(32.dp))
                     
-                    // کادر وارد کردن کلید API
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = onApiKeyChange,
@@ -146,7 +144,7 @@ fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateTo
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(), // مخفی کردن کلید برای امنیت
+                        visualTransformation = PasswordVisualTransformation(),
                         colors = TextFieldDefaults.outlinedTextFieldColors(
                             focusedBorderColor = SkyBlue,
                             unfocusedBorderColor = LightPurple,
@@ -161,7 +159,7 @@ fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateTo
                             keyboard?.hide()
                             onNavigateToMain()
                         },
-                        enabled = apiKey.isNotBlank(), // دکمه تا وقتی کلید وارد نشده غیرفعال است
+                        enabled = apiKey.isNotBlank(),
                         shape = RoundedCornerShape(24.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = SkyBlue,
@@ -179,7 +177,6 @@ fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateTo
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(apiKey: String) {
     var inputText by remember { mutableStateOf("") }
@@ -270,7 +267,6 @@ fun ChatBubble(message: ChatMessage) {
     }
 }
 
-// ====== تابع ارتباط با سرور Z.ai ======
 suspend fun sendMessageToZai(userText: String, apiKey: String): String {
     return withContext(Dispatchers.IO) {
         try {
@@ -292,7 +288,6 @@ suspend fun sendMessageToZai(userText: String, apiKey: String): String {
             val response = client.newCall(request).execute()
             val resStr = response.body?.string() ?: ""
             
-            // استخراج متن پاسخ از JSON
             val jsonRes = JSONObject(resStr)
             if (jsonRes.has("error")) {
                 "خطای سرور: کلید API اشتباه است یا اعتبار ندارد."
