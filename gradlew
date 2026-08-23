@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 #
 # Copyright 2015 the original author or authors.
@@ -39,19 +39,33 @@ DEFAULT_JVM_OPTS='"${JAVA_OPTS}" "-Xmx64m" "-Xms64m"'
 # Use the maximum available, or set MAX_FD != maximum.
 MAX_FD="maximum"
 
-# Tell sh how to exit cleanly.
-# In case we are using sh from Cygwin, issue an error showing path to java
-# instead of continuing silently.
-if ! command -v java >/dev/null 2>&1
-then
-    die "java is not installed"
-fi
+# Tell bash how to exit cleanly.
+die() {
+    echo "$*"
+    exit 1
+}
+
+# OS specific support (must be 'true' or 'false').
+cygwin=false
+msys=false
+darwin=false
+case "`uname`" in
+  CYGWIN* )
+    cygwin=true
+    ;;
+  Darwin* )
+    darwin=true
+    ;;
+  MSYS* | MINGW* )
+    msys=true
+    ;;
+esac
 
 # Increase the maximum file descriptors if we can.
-if ! is_cygwin ; then
+if ! "$cygwin" && ! "$msys" ; then
     MAX_FD_LIMIT=`ulimit -H -n`
     if [ $? -eq 0 ] ; then
-        if [ "$MAX_FD" = "maximum" -o "$MAX_FD" = "max" ] ; then
+        if [ "$MAX_FD" = "maximum" ] || [ "$MAX_FD" = "max" ] ; then
             MAX_FD="$MAX_FD_LIMIT"
         fi
         ulimit -n $MAX_FD
@@ -64,15 +78,14 @@ if ! is_cygwin ; then
 fi
 
 # For Darwin, add options to specify how the application appears in the dock
-if is_darwin; then
+if "$darwin"; then
     DEFAULT_JVM_OPTS="${DEFAULT_JVM_OPTS} \"-Xdock:name=${APP_NAME}\" \"-Xdock:icon=${APP_HOME}/media/gradle.icns\""
 fi
 
 # For Cygwin or MSYS, switch paths to Windows format before running java
-if is_cygwin || is_msys ; then
+if "$cygwin" || "$msys" ; then
     APP_HOME=`cygpath --path --mixed "$APP_HOME"`
     CLASSPATH=`cygpath --path --mixed "$CLASSPATH"`
-
     JAVACMD=`cygpath --unix "$JAVACMD"`
 
     # We build the pattern for arguments to be converted via cygpath
@@ -111,22 +124,6 @@ location of your Java installation."
     fi
 fi
 
-# Increase the maximum file descriptors if we can.
-if ! is_cygwin ; then
-    MAX_FD_LIMIT=`ulimit -H -n`
-    if [ $? -eq 0 ] ; then
-        if [ "$MAX_FD" = "maximum" -o "$MAX_FD" = "max" ] ; then
-            MAX_FD="$MAX_FD_LIMIT"
-        fi
-        ulimit -n $MAX_FD
-        if [ $? -ne 0 ] ; then
-            warn "Could not set maximum file descriptor limit: $MAX_FD"
-        fi
-    else
-        warn "Could not query maximum file descriptor limit: $MAX_FD_LIMIT"
-    fi
-fi
-
 # Collect all arguments for the java command, stacking in reverse order:
 #   * args from the command line
 #   * the main class name
@@ -136,10 +133,9 @@ fi
 #   * DEFAULT_JVM_OPTS, JAVA_OPTS, and GRADLE_OPTS environment variables.
 
 # For Cygwin or MSYS, switch paths to Windows format before running java
-if is_cygwin || is_msys ; then
+if "$cygwin" || "$msys" ; then
     APP_HOME=`cygpath --path --mixed "$APP_HOME"`
     CLASSPATH=`cygpath --path --mixed "$CLASSPATH"`
-
     JAVACMD=`cygpath --unix "$JAVACMD"`
 
     # We build the pattern for arguments to be converted via cygpath
@@ -153,22 +149,4 @@ if is_cygwin || is_msys ; then
     CLASSPATH="${CLASSPATH}${SEP}${JTMPDIR}"
 fi
 
-# For Cygwin or MSYS, switch paths to Windows format before running java
-if is_cygwin || is_msys ; then
-    APP_HOME=`cygpath --path --mixed "$APP_HOME"`
-    CLASSPATH=`cygpath --path --mixed "$CLASSPATH"`
-
-    JAVACMD=`cygpath --unix "$JAVACMD"`
-
-    # We build the pattern for arguments to be converted via cygpath
-    ROOTDIRSRAW=`find -L / -maxdepth 3 -type d -name java_modules 2>/dev/null || true`
-    SEP=""
-    for dir in $ROOTDIRSRAW ; do
-        ROOTDIRS="${ROOTDIRS}${SEP}$(cygpath --path --ignore --mixed \"$dir\")"
-        SEP=":"
-    done
-    JTMPDIR=`cygpath --absolute --mixed "$TMPDIR"`
-    CLASSPATH="${CLASSPATH}${SEP}${JTMPDIR}"
-fi
-
-exec "$JAVACMD" "${JVM_OPTS[@]}" -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"
+exec "$JAVACMD" $DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"
