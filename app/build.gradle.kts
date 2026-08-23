@@ -15,19 +15,19 @@ android {
         versionName = "2.0.0"
         
         vectorDrawables.useSupportLibrary = true
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         debug {
             isDebuggable = true
             isMinifyEnabled = false
+            debuggable = true
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            
-            signingConfig = null // Set to signing config if available
         }
     }
     
@@ -59,7 +59,8 @@ android {
             excludes += listOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
                 "META-INF/proguard/androidx-*.pro",
-                "META-INF/*.kotlin_module"
+                "META-INF/*.kotlin_module",
+                "META-INF/INDEX.LIST"
             )
         }
     }
@@ -67,6 +68,7 @@ android {
     lint {
         checkReleaseBuilds = false
         abortOnError = false
+        disable += "MissingTranslation"
     }
 }
 
