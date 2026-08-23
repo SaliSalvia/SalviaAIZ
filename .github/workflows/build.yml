@@ -3,6 +3,8 @@ name: Build SalviaAIZ APK
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -17,17 +19,23 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         
-    - name: Setup Gradle 8.2
-      run: |
-        wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
-        unzip -q gradle-8.2-bin.zip
-        echo "$PWD/gradle-8.2/bin" >> $GITHUB_PATH
+    - name: Make Gradlew Executable
+      run: chmod +x ./gradlew
       
     - name: Build Debug APK
-      run: gradle assembleDebug --no-daemon
+      run: ./gradlew clean assembleDebug --info
       
-    - name: Upload APK
+    - name: Build Release APK
+      run: ./gradlew assembleRelease --info
+      
+    - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
-        name: SalviaAIZ-App
+        name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
+        
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-unsigned
+        path: app/build/outputs/apk/release/app-release-unsigned.apk
