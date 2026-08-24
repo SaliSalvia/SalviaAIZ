@@ -72,25 +72,26 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
-// --- سیستم رنگی نئونی / شیشه‌ای (Obsidian, Violet, Electric Cyan, Pure White) ---
-val BgDark = Color(0xFF0A0914)
-val BgCardDark = Color(0xFF131224)
+// --- پالت رنگی کلاس جهانی: بنفش ویولت، مشکی ابسیدین، سفید کریستالی و سیان نئونی ---
+val ObsidianBlack = Color(0xFF090814)
+val SurfaceDark = Color(0xFF131126)
 val NeonViolet = Color(0xFF8B5CF6)
 val DeepViolet = Color(0xFF6D28D9)
-val ElectricCyan = Color(0xFF06B6D4)
+val ElectricCyan = Color(0xFF00F2FE)
 val CyberMint = Color(0xFF10B981)
-val PureWhite = Color(0xFFF8FAFC)
-val TextSecondary = Color(0xFF94A3B8)
+val PureWhite = Color(0xFFFFFFFF)
+val TextMuted = Color(0xFF94A3B8)
 val GlassSurface = Color(0x18FFFFFF)
-val GlassBorder = Color(0x2EFFFFFF)
+val GlassBorder = Color(0x358B5CF6)
 
-const val CHAT_MODEL = "glm-4.6"
-const val IMAGE_MODEL = "cogview-3"
+const val DEFAULT_CHAT_MODEL = "glm-4.6"
+const val DEFAULT_IMAGE_MODEL = "cogview-3"
 const val PREFS_NAME = "SalviaAIZPrefs"
 const val KEY_API = "api_key"
+const val KEY_MODEL = "selected_model"
 
-// کلاینت پرسرعت OkHttp با Connection Pooling و تایم‌اوت مناسب هوش مصنوعی
-val globalOkHttpClient: OkHttpClient by lazy {
+// کلاینت پایدار و سریع
+val okHttpClient: OkHttpClient by lazy {
     OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -98,9 +99,9 @@ val globalOkHttpClient: OkHttpClient by lazy {
         .build()
 }
 
-// اکستنشن استایل شیشه‌ای و لبه‌های یخی
-fun Modifier.glassmorphic(
-    cornerRadius: Dp = 24.dp,
+// اکستنشن اختصاصی تم شیشه‌ای و لبه‌های یخی
+fun Modifier.frostedGlass(
+    cornerRadius: Dp = 22.dp,
     bg: Color = GlassSurface,
     border: Color = GlassBorder
 ) = this
@@ -108,7 +109,9 @@ fun Modifier.glassmorphic(
     .background(bg)
     .border(
         width = 1.dp,
-        brush = Brush.linearGradient(listOf(border, Color(0x05FFFFFF))),
+        brush = Brush.linearGradient(
+            listOf(border, Color(0x05FFFFFF), ElectricCyan.copy(alpha = 0.3f))
+        ),
         shape = RoundedCornerShape(cornerRadius)
     )
 
@@ -120,8 +123,8 @@ class MainActivity : ComponentActivity() {
                 colorScheme = darkColorScheme(
                     primary = NeonViolet,
                     secondary = ElectricCyan,
-                    background = BgDark,
-                    surface = BgCardDark
+                    background = ObsidianBlack,
+                    surface = SurfaceDark
                 )
             ) {
                 SalviaApp()
@@ -130,27 +133,28 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// مدل‌های داده‌ای پیشرفته
-data class FileAttachment(
+// --- ساختار مدل‌های داده ---
+data class AttachedFile(
     val uri: String,
     val name: String,
     val mimeType: String,
-    val sizeString: String,
+    val sizeLabel: String,
     val isImage: Boolean
 )
 
 data class GeneratedArtifact(
+    val id: String = UUID.randomUUID().toString(),
     val title: String,
     val content: String,
     val extension: String,
-    val type: String
+    val typeLabel: String
 )
 
 data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val text: String,
     val isUser: Boolean,
-    val attachment: FileAttachment? = null,
+    val attachment: AttachedFile? = null,
     val artifacts: List<GeneratedArtifact> = emptyList()
 )
 
@@ -160,16 +164,17 @@ fun SalviaApp() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     var apiKey by remember { mutableStateOf(prefs.getString(KEY_API, "") ?: "") }
+    var selectedModel by remember { mutableStateOf(prefs.getString(KEY_MODEL, DEFAULT_CHAT_MODEL) ?: DEFAULT_CHAT_MODEL) }
 
     Scaffold(
-        containerColor = BgDark,
+        containerColor = ObsidianBlack,
         bottomBar = {
             val currentRoute = nav.currentBackStackEntryAsState().value?.destination?.route
             if (currentRoute != "welcome") {
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 14.dp)
+                        .padding(horizontal = 18.dp, vertical = 14.dp)
                 ) {
                     NavigationBar(
                         containerColor = Color.Transparent,
@@ -177,7 +182,7 @@ fun SalviaApp() {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(68.dp)
-                            .glassmorphic(cornerRadius = 32.dp, bg = Color(0x30131224), border = Color(0x408B5CF6))
+                            .frostedGlass(cornerRadius = 32.dp, bg = Color(0x35131126), border = Color(0x508B5CF6))
                     ) {
                         val items = listOf(
                             Triple("Chat", Icons.Outlined.Chat, Icons.Filled.Chat),
@@ -200,20 +205,20 @@ fun SalviaApp() {
                                     Icon(
                                         imageVector = if (isSelected) selectedIcon else unselectedIcon,
                                         contentDescription = label,
-                                        tint = if (isSelected) ElectricCyan else TextSecondary,
+                                        tint = if (isSelected) ElectricCyan else TextMuted,
                                         modifier = Modifier.size(24.dp)
                                     )
                                 },
                                 label = {
                                     Text(
                                         label,
-                                        color = if (isSelected) PureWhite else TextSecondary,
+                                        color = if (isSelected) PureWhite else TextMuted,
                                         fontSize = 11.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                     )
                                 },
                                 colors = NavigationBarItemDefaults.colors(
-                                    indicatorColor = Color(0x2006B6D4)
+                                    indicatorColor = Color(0x2000F2FE)
                                 )
                             )
                         }
@@ -230,9 +235,9 @@ fun SalviaApp() {
             composable("welcome") {
                 WelcomeScreen(
                     apiKey = apiKey,
-                    onApiKeyChange = { newKey ->
-                        apiKey = newKey
-                        prefs.edit().putString(KEY_API, newKey).apply()
+                    onSaveApiKey = { key ->
+                        apiKey = key
+                        prefs.edit().putString(KEY_API, key).apply()
                     },
                     onNavigateToMain = {
                         nav.navigate("chat") {
@@ -241,18 +246,24 @@ fun SalviaApp() {
                     }
                 )
             }
-            composable("chat") { ChatScreen(apiKey) }
-            composable("studio") { ImageAndEditStudioScreen(apiKey) }
+            composable("chat") {
+                ChatScreen(apiKey = apiKey, model = selectedModel)
+            }
+            composable("studio") {
+                ImageAndEditStudioScreen(apiKey = apiKey)
+            }
             composable("settings") {
                 SettingsScreen(
                     apiKey = apiKey,
-                    onUpdateKey = { newKey ->
-                        apiKey = newKey
-                        prefs.edit().putString(KEY_API, newKey).apply()
+                    selectedModel = selectedModel,
+                    onSaveSettings = { key, model ->
+                        apiKey = key
+                        selectedModel = model
+                        prefs.edit().putString(KEY_API, key).putString(KEY_MODEL, model).apply()
                     },
-                    onResetKey = {
+                    onLogout = {
                         apiKey = ""
-                        prefs.edit().remove(KEY_API).apply()
+                        prefs.edit().clear().apply()
                         nav.navigate("welcome") {
                             popUpTo(nav.graph.id) { inclusive = true }
                         }
@@ -263,13 +274,15 @@ fun SalviaApp() {
     }
 }
 
-// --- صفحه خوش‌آمدگویی نئونی و یخی ---
+// --- ۱. صفحه خوش‌آمدگویی نئونی و یخی ---
 @Composable
-fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateToMain: () -> Unit) {
+fun WelcomeScreen(apiKey: String, onSaveApiKey: (String) -> Unit, onNavigateToMain: () -> Unit) {
+    var keyInput by remember { mutableStateOf(apiKey) }
     var buttonVisible by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
+
     LaunchedEffect(Unit) {
-        delay(400)
+        delay(300)
         buttonVisible = true
     }
 
@@ -278,7 +291,7 @@ fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateTo
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(BgDark, Color(0xFF1E1035), BgDark)
+                    listOf(ObsidianBlack, Color(0xFF1E0E38), ObsidianBlack)
                 )
             ),
         contentAlignment = Alignment.Center
@@ -288,26 +301,26 @@ fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateTo
             modifier = Modifier
                 .padding(24.dp)
                 .fillMaxWidth()
-                .glassmorphic(cornerRadius = 32.dp, bg = Color(0x1AFFFFFF), border = Color(0x358B5CF6))
+                .frostedGlass(cornerRadius = 32.dp, bg = Color(0x18FFFFFF), border = Color(0x408B5CF6))
                 .padding(28.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(110.dp)
-                    .glassmorphic(cornerRadius = 28.dp, bg = Color(0x308B5CF6), border = ElectricCyan),
+                    .size(100.dp)
+                    .frostedGlass(cornerRadius = 28.dp, bg = Color(0x308B5CF6), border = ElectricCyan),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Filled.AutoAwesome,
-                    contentDescription = "Logo",
+                    contentDescription = null,
                     tint = ElectricCyan,
-                    modifier = Modifier.size(54.dp)
+                    modifier = Modifier.size(50.dp)
                 )
             }
             Spacer(modifier = Modifier.height(20.dp))
             Text("SalviaAIZ", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = PureWhite)
             Text(
-                "Ultimate Z.ai Intelligence Suite",
+                "Next-Gen Z.ai AI Companion",
                 fontSize = 13.sp,
                 color = ElectricCyan,
                 fontWeight = FontWeight.Medium
@@ -316,10 +329,10 @@ fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateTo
             Spacer(modifier = Modifier.height(30.dp))
 
             OutlinedTextField(
-                value = apiKey,
-                onValueChange = onApiKeyChange,
-                label = { Text("Enter Z.ai API Key", color = TextSecondary) },
-                placeholder = { Text("Bearer token / API key", color = Color.Gray) },
+                value = keyInput,
+                onValueChange = { keyInput = it },
+                label = { Text("Z.ai API Key", color = TextMuted) },
+                placeholder = { Text("Enter your Bearer Token", color = Color.Gray) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
                 singleLine = true,
@@ -329,58 +342,57 @@ fun WelcomeScreen(apiKey: String, onApiKeyChange: (String) -> Unit, onNavigateTo
                     unfocusedTextColor = PureWhite,
                     focusedBorderColor = ElectricCyan,
                     unfocusedBorderColor = NeonViolet.copy(alpha = 0.5f),
-                    focusedContainerColor = Color(0x10FFFFFF),
+                    focusedContainerColor = Color(0x12FFFFFF),
                     unfocusedContainerColor = Color(0x08FFFFFF)
                 )
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            AnimatedVisibility(visible = buttonVisible, enter = fadeIn(tween(400)) + expandVertically()) {
+            AnimatedVisibility(visible = buttonVisible, enter = fadeIn(tween(400))) {
                 Button(
                     onClick = {
                         keyboard?.hide()
+                        onSaveApiKey(keyInput.trim())
                         onNavigateToMain()
                     },
-                    enabled = apiKey.isNotBlank(),
+                    enabled = keyInput.isNotBlank(),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = NeonViolet,
-                        disabledContainerColor = Color(0x408B5CF6)
+                        disabledContainerColor = Color(0x308B5CF6)
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp)
+                        .height(52.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Get Started", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PureWhite)
-                        Spacer(Modifier.width(8.dp))
-                        Icon(Icons.Filled.ArrowForward, contentDescription = null, tint = PureWhite)
-                    }
+                    Text("Launch Workspace", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PureWhite)
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Filled.ArrowForward, contentDescription = null, tint = PureWhite)
                 }
             }
         }
     }
 }
 
-// --- صفحه چت هوشمند با پشتیبانی کامل از انواع فایل‌ها و Artifacts ---
+// --- ۲. صفحه چت هوشمند با پشتیبانی از انواع فایل و استخراج Artifacts ---
 @Composable
-fun ChatScreen(apiKey: String) {
+fun ChatScreen(apiKey: String, model: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
-    var currentAttachment by remember { mutableStateOf<FileAttachment?>(null) }
-    var previewArtifact by remember { mutableStateOf<GeneratedArtifact?>(null) }
+    var isWebSearchEnabled by remember { mutableStateOf(false) }
+    var currentAttachment by remember { mutableStateOf<AttachedFile?>(null) }
+    var activePreviewArtifact by remember { mutableStateOf<GeneratedArtifact?>(null) }
 
     val messages = remember { mutableStateListOf<ChatMessage>() }
     val listState = rememberLazyListState()
 
-    // انتخاب انواع فایل‌ها (عکس، پی دی اف، ورد، متنی و...)
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    // انتخاب تمام انواع فایل‌ها (Photo, PDF, Doc, Text, Code, Audio)
+    val universalFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
-            val attachment = extractFileAttachment(context, it)
-            currentAttachment = attachment
+            currentAttachment = extractAttachedFile(context, it)
         }
     }
 
@@ -391,7 +403,7 @@ fun ChatScreen(apiKey: String) {
     }
 
     Scaffold(
-        containerColor = BgDark,
+        containerColor = ObsidianBlack,
         topBar = {
             Row(
                 modifier = Modifier
@@ -403,24 +415,45 @@ fun ChatScreen(apiKey: String) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .glassmorphic(cornerRadius = 12.dp, bg = Color(0x308B5CF6), border = ElectricCyan),
+                            .size(40.dp)
+                            .frostedGlass(cornerRadius = 12.dp, bg = Color(0x308B5CF6), border = ElectricCyan),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Filled.Bolt, contentDescription = null, tint = ElectricCyan, modifier = Modifier.size(22.dp))
                     }
                     Spacer(Modifier.width(10.dp))
                     Column {
-                        Text("SalviaAIZ Pro", color = PureWhite, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                        Text("Model: $CHAT_MODEL", color = TextSecondary, fontSize = 11.sp)
+                        Text("SalviaAIZ Chat", color = PureWhite, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                        Text("Active: $model", color = TextMuted, fontSize = 11.sp)
                     }
                 }
 
-                IconButton(
-                    onClick = { messages.clear() },
-                    modifier = Modifier.glassmorphic(cornerRadius = 14.dp, bg = Color(0x18FFFFFF))
-                ) {
-                    Icon(Icons.Outlined.DeleteSweep, "Clear", tint = TextSecondary, modifier = Modifier.size(20.dp))
+                // سوییچ وب سرچ و دکمه پاکسازی
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(
+                        selected = isWebSearchEnabled,
+                        onClick = { isWebSearchEnabled = !isWebSearchEnabled },
+                        label = { Text("Web", fontSize = 11.sp, color = if (isWebSearchEnabled) PureWhite else TextMuted) },
+                        leadingIcon = {
+                            Icon(Icons.Filled.Language, null, modifier = Modifier.size(14.dp), tint = if (isWebSearchEnabled) ElectricCyan else TextMuted)
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0x4000F2FE),
+                            containerColor = Color(0x15FFFFFF)
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = isWebSearchEnabled,
+                            borderColor = if (isWebSearchEnabled) ElectricCyan else Color(0x20FFFFFF)
+                        )
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = { messages.clear() },
+                        modifier = Modifier.frostedGlass(cornerRadius = 14.dp, bg = Color(0x18FFFFFF))
+                    ) {
+                        Icon(Icons.Outlined.DeleteSweep, "Clear", tint = TextMuted, modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         },
@@ -430,13 +463,13 @@ fun ChatScreen(apiKey: String) {
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
-                // نمایش پیش‌نمایش فایل انتخاب شده
+                // نمایش فایل پیوست شده قبل از ارسال
                 currentAttachment?.let { att ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 8.dp)
-                            .glassmorphic(cornerRadius = 16.dp, bg = Color(0x251E1035), border = ElectricCyan)
+                            .frostedGlass(cornerRadius = 16.dp, bg = Color(0x301E0E38), border = ElectricCyan)
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -444,29 +477,29 @@ fun ChatScreen(apiKey: String) {
                             imageVector = if (att.isImage) Icons.Filled.Image else Icons.Filled.InsertDriveFile,
                             contentDescription = null,
                             tint = ElectricCyan,
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(att.name, color = PureWhite, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${att.mimeType} • ${att.sizeString}", color = TextSecondary, fontSize = 11.sp)
+                            Text("${att.mimeType} • ${att.sizeLabel}", color = TextMuted, fontSize = 11.sp)
                         }
-                        IconButton(onClick = { currentAttachment = null }, modifier = Modifier.size(26.dp)) {
+                        IconButton(onClick = { currentAttachment = null }, modifier = Modifier.size(24.dp)) {
                             Icon(Icons.Filled.Close, "Remove", tint = Color.Red, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
 
-                // نوار ورودی شیشه‌ای
+                // فیلد ورودی شیشه‌ای
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .glassmorphic(cornerRadius = 28.dp, bg = Color(0x221A182E), border = Color(0x408B5CF6))
+                        .frostedGlass(cornerRadius = 28.dp, bg = Color(0x281A1633), border = Color(0x408B5CF6))
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = { filePicker.launch("*/*") },
+                        onClick = { universalFilePicker.launch("*/*") },
                         modifier = Modifier.size(42.dp)
                     ) {
                         Icon(Icons.Filled.AddCircle, "Attach", tint = ElectricCyan, modifier = Modifier.size(26.dp))
@@ -475,7 +508,7 @@ fun ChatScreen(apiKey: String) {
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        placeholder = { Text("Ask anything or request a document...", color = TextSecondary, fontSize = 14.sp) },
+                        placeholder = { Text("Message or ask to generate files...", color = TextMuted, fontSize = 14.sp) },
                         modifier = Modifier
                             .weight(1f)
                             .padding(horizontal = 4.dp),
@@ -493,9 +526,9 @@ fun ChatScreen(apiKey: String) {
                     FloatingActionButton(
                         onClick = {
                             if ((inputText.isNotBlank() || currentAttachment != null) && !isLoading) {
-                                val userText = inputText.trim()
+                                val userMsg = inputText.trim()
                                 val attachment = currentAttachment
-                                messages.add(ChatMessage(text = userText, isUser = true, attachment = attachment))
+                                messages.add(ChatMessage(text = userMsg, isUser = true, attachment = attachment))
                                 inputText = ""
                                 currentAttachment = null
                                 isLoading = true
@@ -506,15 +539,17 @@ fun ChatScreen(apiKey: String) {
 
                                     streamUniversalZaiChat(
                                         context = context,
-                                        userText = userText,
+                                        model = model,
+                                        userText = userMsg,
                                         attachment = attachment,
+                                        webSearch = isWebSearchEnabled,
                                         apiKey = apiKey
                                     ) { chunk ->
                                         val idx = messages.indexOfFirst { it.id == botMsgId }
                                         if (idx != -1) {
                                             val newText = messages[idx].text + chunk
-                                            val artifacts = parseArtifacts(newText)
-                                            messages[idx] = messages[idx].copy(text = newText, artifacts = artifacts)
+                                            val parsedArtifacts = extractArtifactsFromText(newText)
+                                            messages[idx] = messages[idx].copy(text = newText, artifacts = parsedArtifacts)
                                         }
                                     }
                                     isLoading = false
@@ -542,7 +577,7 @@ fun ChatScreen(apiKey: String) {
                 .padding(padding)
         ) {
             if (messages.isEmpty()) {
-                EmptyStateWelcome()
+                EmptyStateView()
             } else {
                 LazyColumn(
                     state = listState,
@@ -552,32 +587,32 @@ fun ChatScreen(apiKey: String) {
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     items(messages, key = { it.id }) { msg ->
-                        ChatMessageItem(
+                        MessageBubble(
                             message = msg,
-                            onPreviewArtifact = { previewArtifact = it },
+                            onPreviewArtifact = { activePreviewArtifact = it },
                             onDownloadArtifact = { artifact ->
-                                saveArtifactToStorage(context, artifact)
+                                saveArtifactDirectly(context, artifact)
                             }
                         )
                     }
                 }
             }
 
-            // مودال پیش‌نمایش زنده سند/فایل (In-App Document Preview Modal)
-            previewArtifact?.let { art ->
-                ArtifactPreviewDialog(
+            // مودال پیش‌نمایش و بازخوانی سریع فایل
+            activePreviewArtifact?.let { art ->
+                ArtifactPreviewModal(
                     artifact = art,
-                    onDismiss = { previewArtifact = null },
-                    onDownload = { saveArtifactToStorage(context, art) }
+                    onDismiss = { activePreviewArtifact = null },
+                    onDownload = { saveArtifactDirectly(context, art) }
                 )
             }
         }
     }
 }
 
-// --- کامپوننت حباب پیام با نمایش انواع فایل و کارت‌های دانلود داکیومنت ---
+// --- نمایش حباب پیام و کارت‌های دانلود اسناد ---
 @Composable
-fun ChatMessageItem(
+fun MessageBubble(
     message: ChatMessage,
     onPreviewArtifact: (GeneratedArtifact) -> Unit,
     onDownloadArtifact: (GeneratedArtifact) -> Unit
@@ -589,17 +624,17 @@ fun ChatMessageItem(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = alignment
     ) {
-        // ۱. نمایش فایل پیوست شده توسط کاربر
+        // ۱. فایل پیوست ارسالی کاربر
         message.attachment?.let { att ->
             if (att.isImage) {
                 AsyncImage(
                     model = att.uri,
                     contentDescription = null,
                     modifier = Modifier
-                        .size(200.dp)
+                        .size(190.dp)
                         .padding(bottom = 6.dp)
                         .clip(RoundedCornerShape(18.dp))
-                        .border(1.dp, Color(0x4006B6D4), RoundedCornerShape(18.dp)),
+                        .border(1.dp, Color(0x5000F2FE), RoundedCornerShape(18.dp)),
                     contentScale = ContentScale.Crop
                 )
             } else {
@@ -607,7 +642,7 @@ fun ChatMessageItem(
                     modifier = Modifier
                         .widthIn(max = 280.dp)
                         .padding(bottom = 6.dp)
-                        .glassmorphic(cornerRadius = 14.dp, bg = Color(0x301E1035), border = ElectricCyan)
+                        .frostedGlass(cornerRadius = 14.dp, bg = Color(0x301E0E38), border = ElectricCyan)
                         .padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -615,26 +650,26 @@ fun ChatMessageItem(
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text(att.name, color = PureWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        Text(att.sizeString, color = TextSecondary, fontSize = 10.sp)
+                        Text(att.sizeLabel, color = TextMuted, fontSize = 10.sp)
                     }
                 }
             }
         }
 
-        // ۲. متن پیام
+        // ۲. متن پیام هوش مصنوعی یا کاربر
         if (message.text.isNotBlank()) {
             Box(
                 modifier = Modifier
                     .widthIn(max = 310.dp)
-                    .glassmorphic(
+                    .frostedGlass(
                         cornerRadius = 20.dp,
-                        bg = if (isUser) DeepViolet.copy(alpha = 0.85f) else Color(0x281C1A36),
+                        bg = if (isUser) DeepViolet.copy(alpha = 0.85f) else Color(0x281A1633),
                         border = if (isUser) NeonViolet else Color(0x308B5CF6)
                     )
                     .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
                 Text(
-                    text = cleanArtifactCodeBlocks(message.text),
+                    text = cleanArtifactText(message.text),
                     color = PureWhite,
                     fontSize = 14.5.sp,
                     lineHeight = 21.sp
@@ -642,11 +677,11 @@ fun ChatMessageItem(
             }
         }
 
-        // ۳. کارت‌های داکیومنت و فایل‌های خروجی هوش مصنوعی (PDF, Code, Word, Text)
+        // ۳. کارت دانلود و پیش‌نمایش فایل‌های تولید شده (PDF, Word, Code, Markdown)
         if (message.artifacts.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             message.artifacts.forEach { artifact ->
-                ArtifactDownloadCard(
+                DocumentArtifactCard(
                     artifact = artifact,
                     onPreview = { onPreviewArtifact(artifact) },
                     onDownload = { onDownloadArtifact(artifact) }
@@ -657,9 +692,9 @@ fun ChatMessageItem(
     }
 }
 
-// کارت شکیل دانلود و پیش‌نمایش فایل
+// کارت شیشه‌ای دانلود و پیش‌نمایش مستقیم فایل
 @Composable
-fun ArtifactDownloadCard(
+fun DocumentArtifactCard(
     artifact: GeneratedArtifact,
     onPreview: () -> Unit,
     onDownload: () -> Unit
@@ -667,7 +702,7 @@ fun ArtifactDownloadCard(
     Row(
         modifier = Modifier
             .widthIn(max = 310.dp)
-            .glassmorphic(cornerRadius = 16.dp, bg = Color(0x35100E26), border = ElectricCyan)
+            .frostedGlass(cornerRadius = 16.dp, bg = Color(0x35100E26), border = ElectricCyan)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -675,8 +710,8 @@ fun ArtifactDownloadCard(
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
-                    .glassmorphic(cornerRadius = 10.dp, bg = Color(0x3006B6D4), border = ElectricCyan),
+                    .size(38.dp)
+                    .frostedGlass(cornerRadius = 10.dp, bg = Color(0x3000F2FE), border = ElectricCyan),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -702,7 +737,7 @@ fun ArtifactDownloadCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "${artifact.type.uppercase()} File • Ready to View",
+                    "${artifact.typeLabel.uppercase()} • Direct Ready",
                     color = CyberMint,
                     fontSize = 10.sp
                 )
@@ -720,52 +755,56 @@ fun ArtifactDownloadCard(
     }
 }
 
-// --- استودیوی دوگانه تولید و ادیت تصویر (Text-to-Image & Image-to-Image) ---
+// --- ۳. استودیوی حرفه‌ای ساخت و ادیت تصویر (Text-to-Image & Image-to-Image) ---
 @Composable
 fun ImageAndEditStudioScreen(apiKey: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var selectedTab by remember { mutableStateOf(0) } // 0: Create, 1: Edit/Remix
-    var prompt by remember { mutableStateOf("") }
-    var selectedSize by remember { mutableStateOf("1024x1024") }
-    var isLoading by remember { mutableStateOf(false) }
-    var generatedImageUrl by remember { mutableStateOf<String?>(null) }
-    var editBaseImageUri by remember { mutableStateOf<String?>(null) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var activeTab by remember { mutableStateOf(0) } // 0: Text-to-Image, 1: Edit & Remix
+    var promptText by remember { mutableStateOf("") }
+    var chosenRatio by remember { mutableStateOf("1024x1024") }
+    var isProcessing by remember { mutableStateOf(false) }
+    var generatedResultUrl by remember { mutableStateOf<String?>(null) }
+    var sourceImageUri by remember { mutableStateOf<String?>(null) }
+    var errorFeedback by remember { mutableStateOf<String?>(null) }
 
-    val editImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        editBaseImageUri = uri?.toString()
+    val sourceImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        sourceImageUri = uri?.toString()
     }
 
-    val sizes = listOf("1024x1024" to "1:1 Square", "768x1344" to "9:16 Tall", "1344x768" to "16:9 Wide")
+    val aspectRatios = listOf(
+        "1024x1024" to "1:1 Square",
+        "768x1344" to "9:16 Story",
+        "1344x768" to "16:9 Cinema"
+    )
 
     Scaffold(
-        containerColor = BgDark,
+        containerColor = ObsidianBlack,
         topBar = {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text("AI Studio", color = PureWhite, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
+                Text("AI Visual Studio", color = PureWhite, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
                 Spacer(Modifier.height(10.dp))
-                // تب انتخاب حالت
+                // انتخابگر تب
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .glassmorphic(cornerRadius = 16.dp, bg = Color(0x20FFFFFF), border = Color(0x308B5CF6))
+                        .frostedGlass(cornerRadius = 16.dp, bg = Color(0x20FFFFFF), border = Color(0x308B5CF6))
                         .padding(4.dp)
                 ) {
-                    listOf("Generate Image", "Edit & Remix").forEachIndexed { index, title ->
-                        val isSelected = selectedTab == index
+                    listOf("Text to Image", "Edit & Remix").forEachIndexed { idx, tabTitle ->
+                        val isSelected = activeTab == idx
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(if (isSelected) NeonViolet else Color.Transparent)
-                                .clickable { selectedTab = index }
+                                .clickable { activeTab = idx }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                title,
-                                color = if (isSelected) PureWhite else TextSecondary,
+                                tabTitle,
+                                color = if (isSelected) PureWhite else TextMuted,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
@@ -783,19 +822,19 @@ fun ImageAndEditStudioScreen(apiKey: String) {
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (selectedTab == 1) {
-                // بخش انتخاب تصویر مبدا برای ادیت
+            // در حالت ویرایش: باکس انتخاب عکس منبع
+            if (activeTab == 1) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(130.dp)
-                        .glassmorphic(cornerRadius = 20.dp, bg = Color(0x18FFFFFF), border = ElectricCyan)
-                        .clickable { editImagePicker.launch("image/*") },
+                        .frostedGlass(cornerRadius = 20.dp, bg = Color(0x18FFFFFF), border = ElectricCyan)
+                        .clickable { sourceImageLauncher.launch("image/*") },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (editBaseImageUri != null) {
+                    if (sourceImageUri != null) {
                         AsyncImage(
-                            model = editBaseImageUri,
+                            model = sourceImageUri,
                             contentDescription = "Source",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -804,7 +843,7 @@ fun ImageAndEditStudioScreen(apiKey: String) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Filled.AddPhotoAlternate, null, tint = ElectricCyan, modifier = Modifier.size(36.dp))
                             Spacer(Modifier.height(6.dp))
-                            Text("Select Base Image to Edit / Remix", color = PureWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Upload Base Image to Remix", color = PureWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -812,13 +851,13 @@ fun ImageAndEditStudioScreen(apiKey: String) {
             }
 
             OutlinedTextField(
-                value = prompt,
-                onValueChange = { prompt = it },
+                value = promptText,
+                onValueChange = { promptText = it },
                 placeholder = {
                     Text(
-                        if (selectedTab == 0) "Describe your dream image in vivid detail..."
-                        else "Describe how to transform this image (e.g., make it cyberpunk, add neon wings)...",
-                        color = TextSecondary,
+                        if (activeTab == 0) "Describe your vision in full artistic detail..."
+                        else "Describe transformation (e.g., convert to cybernetic neon art)...",
+                        color = TextMuted,
                         fontSize = 13.5.sp
                     )
                 },
@@ -838,26 +877,26 @@ fun ImageAndEditStudioScreen(apiKey: String) {
 
             Spacer(Modifier.height(14.dp))
 
-            // انتخاب نسبت تصویر
+            // انتخاب ابعاد
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(sizes) { (size, label) ->
-                    val isSelected = selectedSize == size
+                items(aspectRatios) { (ratio, label) ->
+                    val isSelected = chosenRatio == ratio
                     Box(
                         modifier = Modifier
-                            .glassmorphic(
+                            .frostedGlass(
                                 cornerRadius = 14.dp,
                                 bg = if (isSelected) DeepViolet.copy(alpha = 0.8f) else Color(0x14FFFFFF),
                                 border = if (isSelected) ElectricCyan else Color(0x20FFFFFF)
                             )
-                            .clickable { selectedSize = size }
+                            .clickable { chosenRatio = ratio }
                             .padding(horizontal = 14.dp, vertical = 8.dp)
                     ) {
                         Text(
                             label,
-                            color = if (isSelected) PureWhite else TextSecondary,
+                            color = if (isSelected) PureWhite else TextMuted,
                             fontSize = 12.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                         )
@@ -869,28 +908,28 @@ fun ImageAndEditStudioScreen(apiKey: String) {
 
             Button(
                 onClick = {
-                    if (prompt.isNotBlank() && !isLoading) {
-                        isLoading = true
-                        generatedImageUrl = null
-                        errorMessage = null
+                    if (promptText.isNotBlank() && !isProcessing) {
+                        isProcessing = true
+                        generatedResultUrl = null
+                        errorFeedback = null
                         scope.launch {
-                            val res = executeZaiImagePipeline(
+                            val res = executeZaiImageEngine(
                                 context = context,
-                                prompt = prompt.trim(),
-                                size = selectedSize,
-                                baseImageUri = if (selectedTab == 1) editBaseImageUri else null,
+                                prompt = promptText.trim(),
+                                size = chosenRatio,
+                                sourceImage = if (activeTab == 1) sourceImageUri else null,
                                 apiKey = apiKey
                             )
                             if (res.startsWith("http")) {
-                                generatedImageUrl = res
+                                generatedResultUrl = res
                             } else {
-                                errorMessage = res
+                                errorFeedback = res
                             }
-                            isLoading = false
+                            isProcessing = false
                         }
                     }
                 },
-                enabled = prompt.isNotBlank() && !isLoading,
+                enabled = promptText.isNotBlank() && !isProcessing,
                 shape = RoundedCornerShape(20.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = NeonViolet,
@@ -900,28 +939,28 @@ fun ImageAndEditStudioScreen(apiKey: String) {
                     .fillMaxWidth()
                     .height(52.dp)
             ) {
-                if (isLoading) {
+                if (isProcessing) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), color = PureWhite, strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
                     Text("Rendering via CogView Engine...", color = PureWhite)
                 } else {
                     Icon(Icons.Filled.AutoAwesome, null, tint = ElectricCyan, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (selectedTab == 0) "Generate Artwork" else "Apply Transformation", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = PureWhite)
+                    Text(if (activeTab == 0) "Generate Artwork" else "Apply Remix", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = PureWhite)
                 }
             }
 
             Spacer(Modifier.height(20.dp))
 
-            // باکس نمایش نتیجه تولید عکس
+            // باکس نتیجه رندر تصویر
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(340.dp)
-                    .glassmorphic(cornerRadius = 24.dp, bg = Color(0x12FFFFFF), border = Color(0x308B5CF6)),
+                    .frostedGlass(cornerRadius = 24.dp, bg = Color(0x12FFFFFF), border = Color(0x308B5CF6)),
                 contentAlignment = Alignment.Center
             ) {
-                if (isLoading) {
+                if (isProcessing) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(20.dp)) {
                         LinearProgressIndicator(
                             color = ElectricCyan,
@@ -931,12 +970,12 @@ fun ImageAndEditStudioScreen(apiKey: String) {
                                 .clip(RoundedCornerShape(4.dp))
                         )
                         Spacer(Modifier.height(14.dp))
-                        Text("Synthesizing pixels with ultra quality...", color = TextSecondary, fontSize = 13.sp)
+                        Text("Synthesizing pixels with ultra fidelity...", color = TextMuted, fontSize = 13.sp)
                     }
-                } else if (generatedImageUrl != null) {
+                } else if (generatedResultUrl != null) {
                     Column(Modifier.fillMaxSize()) {
                         AsyncImage(
-                            model = generatedImageUrl,
+                            model = generatedResultUrl,
                             contentDescription = "Artwork",
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -947,41 +986,37 @@ fun ImageAndEditStudioScreen(apiKey: String) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Color(0x800A0914))
+                                .background(Color(0x90090814))
                                 .padding(10.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
                             Button(
-                                onClick = {
-                                    downloadImageDirectly(context, generatedImageUrl!!)
-                                },
+                                onClick = { downloadMediaFile(context, generatedResultUrl!!) },
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = CyberMint)
                             ) {
                                 Icon(Icons.Filled.Download, null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Download Image", fontSize = 12.sp)
+                                Text("Save Image", fontSize = 12.sp)
                             }
                             Button(
-                                onClick = {
-                                    shareImageLink(context, generatedImageUrl!!)
-                                },
+                                onClick = { shareDirectLink(context, generatedResultUrl!!) },
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan)
                             ) {
-                                Icon(Icons.Filled.Share, null, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Filled.Share, null, modifier = Modifier.size(16.dp), tint = ObsidianBlack)
                                 Spacer(Modifier.width(6.dp))
-                                Text("Share", fontSize = 12.sp)
+                                Text("Share Link", fontSize = 12.sp, color = ObsidianBlack)
                             }
                         }
                     }
-                } else if (errorMessage != null) {
-                    Text(errorMessage ?: "", color = Color.Red, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+                } else if (errorFeedback != null) {
+                    Text(errorFeedback ?: "", color = Color.Red, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Outlined.Brush, null, tint = TextSecondary, modifier = Modifier.size(54.dp))
+                        Icon(Icons.Outlined.Brush, null, tint = TextMuted, modifier = Modifier.size(54.dp))
                         Spacer(Modifier.height(8.dp))
-                        Text("Your rendered art will appear here", color = TextSecondary, fontSize = 13.sp)
+                        Text("Your rendered art will appear here", color = TextMuted, fontSize = 13.sp)
                     }
                 }
             }
@@ -990,9 +1025,9 @@ fun ImageAndEditStudioScreen(apiKey: String) {
     }
 }
 
-// --- پیش‌نمایش زنده اسناد و فایل‌های متنی داخل اپلیکیشن ---
+// --- ۴. مودال پیش‌نمایش و خواندن اسناد داخل خود اپلیکیشن ---
 @Composable
-fun ArtifactPreviewDialog(
+fun ArtifactPreviewModal(
     artifact: GeneratedArtifact,
     onDismiss: () -> Unit,
     onDownload: () -> Unit
@@ -1006,7 +1041,7 @@ fun ArtifactPreviewDialog(
         modifier = Modifier
             .fillMaxWidth(0.92f)
             .fillMaxHeight(0.80f)
-            .glassmorphic(cornerRadius = 24.dp, bg = BgCardDark, border = ElectricCyan),
+            .frostedGlass(cornerRadius = 24.dp, bg = SurfaceDark, border = ElectricCyan),
         confirmButton = {
             Button(
                 onClick = {
@@ -1018,7 +1053,7 @@ fun ArtifactPreviewDialog(
             ) {
                 Icon(Icons.Filled.Download, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Save to Files")
+                Text("Direct Download")
             }
         },
         dismissButton = {
@@ -1027,10 +1062,10 @@ fun ArtifactPreviewDialog(
                     clipboard.setText(AnnotatedString(artifact.content))
                     Toast.makeText(context, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
                 }) {
-                    Text("Copy Content", color = ElectricCyan)
+                    Text("Copy Raw Text", color = ElectricCyan)
                 }
                 TextButton(onClick = onDismiss) {
-                    Text("Close", color = TextSecondary)
+                    Text("Close", color = TextMuted)
                 }
             }
         },
@@ -1045,7 +1080,7 @@ fun ArtifactPreviewDialog(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .glassmorphic(cornerRadius = 14.dp, bg = Color(0x20000000), border = Color(0x20FFFFFF))
+                    .frostedGlass(cornerRadius = 14.dp, bg = Color(0x30000000), border = Color(0x20FFFFFF))
                     .padding(12.dp)
                     .verticalScroll(rememberScrollState())
             ) {
@@ -1061,11 +1096,19 @@ fun ArtifactPreviewDialog(
     )
 }
 
-// --- صفحه تنظیمات ---
+// --- ۵. صفحه تنظیمات و شخصی‌سازی مدل ---
 @Composable
-fun SettingsScreen(apiKey: String, onUpdateKey: (String) -> Unit, onResetKey: () -> Unit) {
-    var tempKey by remember { mutableStateOf(apiKey) }
+fun SettingsScreen(
+    apiKey: String,
+    selectedModel: String,
+    onSaveSettings: (String, String) -> Unit,
+    onLogout: () -> Unit
+) {
+    var keyState by remember { mutableStateOf(apiKey) }
+    var modelState by remember { mutableStateOf(selectedModel) }
     val context = LocalContext.current
+
+    val models = listOf("glm-4.6", "glm-4-plus", "glm-4-flash")
 
     Column(
         modifier = Modifier
@@ -1073,20 +1116,20 @@ fun SettingsScreen(apiKey: String, onUpdateKey: (String) -> Unit, onResetKey: ()
             .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Settings & Engine", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PureWhite)
+        Text("System Settings", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PureWhite)
         Spacer(Modifier.height(24.dp))
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .glassmorphic(cornerRadius = 20.dp, bg = Color(0x18FFFFFF), border = Color(0x308B5CF6))
+                .frostedGlass(cornerRadius = 20.dp, bg = Color(0x18FFFFFF), border = Color(0x308B5CF6))
                 .padding(18.dp)
         ) {
-            Text("Active API Key", color = TextSecondary, fontSize = 12.sp)
+            Text("Z.ai API Key", color = TextMuted, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
             OutlinedTextField(
-                value = tempKey,
-                onValueChange = { tempKey = it },
+                value = keyState,
+                onValueChange = { keyState = it },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
                 visualTransformation = PasswordVisualTransformation(),
@@ -1097,53 +1140,76 @@ fun SettingsScreen(apiKey: String, onUpdateKey: (String) -> Unit, onResetKey: ()
                     unfocusedBorderColor = Color(0x308B5CF6)
                 )
             )
-            Spacer(Modifier.height(12.dp))
+
+            Spacer(Modifier.height(16.dp))
+            Text("Language Model Selection", color = TextMuted, fontSize = 12.sp)
+            Spacer(Modifier.height(6.dp))
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(models) { m ->
+                    val isChosen = modelState == m
+                    Box(
+                        modifier = Modifier
+                            .frostedGlass(
+                                cornerRadius = 12.dp,
+                                bg = if (isChosen) NeonViolet else Color(0x14FFFFFF),
+                                border = if (isChosen) ElectricCyan else Color(0x20FFFFFF)
+                            )
+                            .clickable { modelState = m }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text(m, color = PureWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
             Button(
                 onClick = {
-                    onUpdateKey(tempKey.trim())
-                    Toast.makeText(context, "API Key updated successfully!", Toast.LENGTH_SHORT).show()
+                    onSaveSettings(keyState.trim(), modelState)
+                    Toast.makeText(context, "Preferences saved successfully!", Toast.LENGTH_SHORT).show()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = NeonViolet),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Save Key")
+                Text("Save Configuration")
             }
         }
 
         Spacer(Modifier.height(16.dp))
 
         Button(
-            onClick = onResetKey,
+            onClick = onLogout,
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Filled.Logout, null)
             Spacer(Modifier.width(8.dp))
-            Text("Logout / Reset All Data")
+            Text("Reset Key / Logout")
         }
     }
 }
 
 @Composable
-fun EmptyStateWelcome() {
+fun EmptyStateView() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
             Box(
                 modifier = Modifier
                     .size(80.dp)
-                    .glassmorphic(cornerRadius = 22.dp, bg = Color(0x208B5CF6), border = ElectricCyan),
+                    .frostedGlass(cornerRadius = 22.dp, bg = Color(0x208B5CF6), border = ElectricCyan),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Filled.Psychology, null, tint = ElectricCyan, modifier = Modifier.size(44.dp))
             }
             Spacer(Modifier.height(16.dp))
-            Text("Ready to Create & Solve", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = PureWhite)
+            Text("Ready for Next Task", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = PureWhite)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Ask questions, upload documents & images, or request full PDF/Code artifacts.",
-                color = TextSecondary,
+                "Upload any document, ask questions, generate files, or toggle live web search.",
+                color = TextMuted,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -1152,22 +1218,32 @@ fun EmptyStateWelcome() {
     }
 }
 
-// --- موتور شبکه مالتی‌مدال و استریمینگ اختصاصی Z.ai ---
+// --- ۶. توابع زیرساخت شبکه و استریم SSE برای Z.ai ---
 suspend fun streamUniversalZaiChat(
     context: Context,
+    model: String,
     userText: String,
-    attachment: FileAttachment?,
+    attachment: AttachedFile?,
+    webSearch: Boolean,
     apiKey: String,
     onToken: (String) -> Unit
 ) {
     withContext(Dispatchers.IO) {
         try {
             val jsonBody = JSONObject().apply {
-                put("model", CHAT_MODEL)
+                put("model", model)
                 put("stream", true)
-                val messagesArray = JSONArray()
 
+                // ابزار سرچ وب
+                if (webSearch) {
+                    val tools = JSONArray()
+                    tools.put(JSONObject().put("type", "web_search").put("web_search", JSONObject().put("enable", true)))
+                    put("tools", tools)
+                }
+
+                val messagesArray = JSONArray()
                 val userObj = JSONObject().put("role", "user")
+
                 if (attachment != null) {
                     val contentArray = JSONArray()
                     if (userText.isNotBlank()) {
@@ -1183,9 +1259,9 @@ suspend fun streamUniversalZaiChat(
                             )
                         }
                     } else {
-                        val fileText = extractFileTextContent(context, Uri.parse(attachment.uri))
-                        val promptWithFile = "[Attached Document: ${attachment.name}]\n\n$fileText\n\nUser Question: $userText"
-                        contentArray.put(JSONObject().put("type", "text").put("text", promptWithFile))
+                        val docText = readDocumentRawText(context, Uri.parse(attachment.uri))
+                        val formattedPrompt = "=== ATTACHED FILE: ${attachment.name} ===\n$docText\n\n=== USER INSTRUCTION ===\n$userText"
+                        contentArray.put(JSONObject().put("type", "text").put("text", formattedPrompt))
                     }
                     userObj.put("content", contentArray)
                 } else {
@@ -1204,10 +1280,10 @@ suspend fun streamUniversalZaiChat(
                 .post(body)
                 .build()
 
-            globalOkHttpClient.newCall(request).execute().use { response ->
+            okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    val errorStr = response.body?.string() ?: "HTTP ${response.code}"
-                    withContext(Dispatchers.Main) { onToken("\n[Error: $errorStr]") }
+                    val err = response.body?.string() ?: "HTTP ${response.code}"
+                    withContext(Dispatchers.Main) { onToken("\n[Error: $err]") }
                     return@withContext
                 }
 
@@ -1236,24 +1312,24 @@ suspend fun streamUniversalZaiChat(
     }
 }
 
-// پایپ‌لاین تولید و ادیت تصویر
-suspend fun executeZaiImagePipeline(
+// موتور ساخت و ادیت تصویر با CogView
+suspend fun executeZaiImageEngine(
     context: Context,
     prompt: String,
     size: String,
-    baseImageUri: String?,
+    sourceImage: String?,
     apiKey: String
 ): String {
     return withContext(Dispatchers.IO) {
         try {
             val jsonBody = JSONObject().apply {
-                put("model", IMAGE_MODEL)
+                put("model", DEFAULT_IMAGE_MODEL)
                 put("prompt", prompt)
                 put("size", size)
-                if (baseImageUri != null) {
-                    val base64Img = uriToBase64(context, Uri.parse(baseImageUri))
-                    if (base64Img != null) {
-                        put("image_url", "data:image/jpeg;base64,$base64Img")
+                if (sourceImage != null) {
+                    val base64 = uriToBase64(context, Uri.parse(sourceImage))
+                    if (base64 != null) {
+                        put("image_url", "data:image/jpeg;base64,$base64")
                     }
                 }
             }.toString()
@@ -1265,27 +1341,26 @@ suspend fun executeZaiImagePipeline(
                 .post(body)
                 .build()
 
-            globalOkHttpClient.newCall(request).execute().use { response ->
-                val res = response.body?.string() ?: ""
-                val json = JSONObject(res)
+            okHttpClient.newCall(request).execute().use { response ->
+                val resStr = response.body?.string() ?: ""
+                val json = JSONObject(resStr)
                 if (json.has("data")) {
                     json.getJSONArray("data").getJSONObject(0).getString("url")
                 } else if (json.has("error")) {
                     json.getJSONObject("error").optString("message")
                 } else {
-                    "Failed to render image."
+                    "Rendering failed. (HTTP ${response.code})"
                 }
             }
         } catch (e: Exception) {
-            "Network error: ${e.localizedMessage}"
+            "Network failure: ${e.localizedMessage}"
         }
     }
 }
 
-// --- استخراج خودکار Artifacts و فایل‌ها از خروجی چت ---
-fun parseArtifacts(text: String): List<GeneratedArtifact> {
-    val artifacts = mutableListOf<GeneratedArtifact>()
-    // الگوی شناسایی بلاک‌های کد نام‌گذاری شده و اسناد: ```language:filename.ext ... ``` یا ```ext ... ```
+// استخراج Artifacts و فایل‌ها از متن تولید شده
+fun extractArtifactsFromText(text: String): List<GeneratedArtifact> {
+    val list = mutableListOf<GeneratedArtifact>()
     val pattern = Pattern.compile("```([a-zA-Z0-9_-]+)?(?::([a-zA-Z0-9_.-]+))?\\s*([\\s\\S]*?)```")
     val matcher = pattern.matcher(text)
 
@@ -1295,78 +1370,76 @@ fun parseArtifacts(text: String): List<GeneratedArtifact> {
         val customName = matcher.group(2)
         val content = matcher.group(3)?.trim() ?: ""
 
-        if (content.length > 30) { // اگر محتوا واقعاً یک فایل باشد
+        if (content.length > 25) {
             val fileName = customName ?: "generated_file_$count.$langOrExt"
             val type = when (langOrExt) {
                 "pdf" -> "PDF Document"
                 "docx", "doc" -> "Word Document"
-                "kt", "java", "py", "js", "html", "css", "json" -> "Source Code"
+                "kt", "java", "py", "js", "html", "css", "json" -> "Code Artifact"
                 else -> "Document"
             }
-            artifacts.add(GeneratedArtifact(title = fileName, content = content, extension = langOrExt, type = type))
+            list.add(GeneratedArtifact(title = fileName, content = content, extension = langOrExt, typeLabel = type))
             count++
         }
     }
-    return artifacts
+    return list
 }
 
-fun cleanArtifactCodeBlocks(text: String): String {
+fun cleanArtifactText(text: String): String {
     return text.replace(Regex("```([a-zA-Z0-9_-]+)?(?::([a-zA-Z0-9_.-]+))?\\s*([\\s\\S]*?)```"), "[📄 Artifact Ready Below]")
 }
 
-// ذخیره سند در حافظه و ارسال به سایر اپلیکیشن‌ها
-fun saveArtifactToStorage(context: Context, artifact: GeneratedArtifact) {
+// ذخیره مستقیم فایل در پوشه دانلودها
+fun saveArtifactDirectly(context: Context, artifact: GeneratedArtifact) {
     try {
-        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        val file = File(downloadsDir, artifact.title)
-        FileOutputStream(file).use { out ->
-            out.write(artifact.content.toByteArray())
-        }
+        val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val target = File(downloads, artifact.title)
+        FileOutputStream(target).use { it.write(artifact.content.toByteArray()) }
+
         Toast.makeText(context, "Saved to Downloads/${artifact.title}", Toast.LENGTH_LONG).show()
 
-        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        val share = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, artifact.content)
             putExtra(Intent.EXTRA_TITLE, artifact.title)
         }
-        context.startActivity(Intent.createChooser(sendIntent, "Share ${artifact.title}"))
+        context.startActivity(Intent.createChooser(share, "Share ${artifact.title}"))
     } catch (e: Exception) {
-        Toast.makeText(context, "Error saving: ${e.message}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Save error: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }
 
-fun downloadImageDirectly(context: Context, url: String) {
+fun downloadMediaFile(context: Context, url: String) {
     try {
-        val request = DownloadManager.Request(Uri.parse(url))
-            .setTitle("SalviaAIZ Art")
-            .setDescription("Downloading generated artwork...")
+        val req = DownloadManager.Request(Uri.parse(url))
+            .setTitle("SalviaAIZ Image")
+            .setDescription("Downloading AI render...")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "SalviaAIZ_${System.currentTimeMillis()}.png")
 
-        val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        manager.enqueue(request)
-        Toast.makeText(context, "Download started...", Toast.LENGTH_SHORT).show()
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        dm.enqueue(req)
+        Toast.makeText(context, "Downloading image...", Toast.LENGTH_SHORT).show()
     } catch (e: Exception) {
         Toast.makeText(context, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }
 
-fun shareImageLink(context: Context, url: String) {
+fun shareDirectLink(context: Context, url: String) {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, "Look at this image generated by SalviaAIZ:\n$url")
+        putExtra(Intent.EXTRA_TEXT, "Generated by SalviaAIZ:\n$url")
     }
-    context.startActivity(Intent.createChooser(intent, "Share Image"))
+    context.startActivity(Intent.createChooser(intent, "Share Link"))
 }
 
-// یوتیلیتی‌های استخراج فایل
-fun extractFileAttachment(context: Context, uri: Uri): FileAttachment {
-    var name = "Attachment"
+fun extractAttachedFile(context: Context, uri: Uri): AttachedFile {
+    var name = "Document"
     var size = "Unknown"
-    val contentResolver = context.contentResolver
-    val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+    val cr = context.contentResolver
+    val mime = cr.getType(uri) ?: "application/octet-stream"
 
-    contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+    cr.query(uri, null, null, null, null)?.use { cursor ->
         if (cursor.moveToFirst()) {
             val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
             val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
@@ -1377,27 +1450,24 @@ fun extractFileAttachment(context: Context, uri: Uri): FileAttachment {
             }
         }
     }
-    val isImg = mimeType.startsWith("image/")
-    return FileAttachment(uri.toString(), name, mimeType, size, isImg)
+    val isImage = mime.startsWith("image/")
+    return AttachedFile(uri.toString(), name, mime, size, isImage)
 }
 
 fun uriToBase64(context: Context, uri: Uri): String? {
     return try {
         context.contentResolver.openInputStream(uri)?.use { stream ->
-            val bytes = stream.readBytes()
-            Base64.encodeToString(bytes, Base64.NO_WRAP)
+            Base64.encodeToString(stream.readBytes(), Base64.NO_WRAP)
         }
-    } catch (_: Exception) {
-        null
-    }
+    } catch (_: Exception) { null }
 }
 
-fun extractFileTextContent(context: Context, uri: Uri): String {
+fun readDocumentRawText(context: Context, uri: Uri): String {
     return try {
         context.contentResolver.openInputStream(uri)?.use { stream ->
-            stream.bufferedReader().use { it.readText().take(12000) } // خواندن امن تا ۱۲ هزار کاراکتر اول سند
-        } ?: "[Empty File]"
+            stream.bufferedReader().use { it.readText().take(15000) }
+        } ?: "[Empty Content]"
     } catch (_: Exception) {
-        "[Unable to read raw text from document]"
+        "[Binary Document]"
     }
 }
