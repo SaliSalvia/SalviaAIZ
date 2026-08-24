@@ -3,9 +3,7 @@ name: Build SalviaAIZ APK
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch: # امکان اجرای دستی با یک کلیک
+  workflow_dispatch:
 
 jobs:
   build:
@@ -20,17 +18,19 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug --stacktrace
+    - name: Build APK with Gradle
+      run: ./gradlew assembleDebug --no-daemon --stacktrace
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: SalviaAIZ-Debug-APK
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: "**/*.apk"
         retention-days: 14
