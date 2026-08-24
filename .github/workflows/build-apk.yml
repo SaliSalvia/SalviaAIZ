@@ -27,21 +27,17 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Regenerate Gradle Wrapper if missing
+      - name: Generate Gradle Wrapper
         run: |
           gradle wrapper --gradle-version 8.7
           chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace --info
-
-      - name: List APK output files
-        run: |
-          echo "=== Searching for generated APK files ==="
-          find . -name "*.apk"
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: SalviaAIZ-APK
-          path: "**/*.apk"
+          path: "**/build/outputs/apk/**/*.apk"
